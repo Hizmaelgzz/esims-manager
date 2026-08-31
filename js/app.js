@@ -459,6 +459,9 @@ function renderDetail() {
   // Mostrar miniatura local al instante; cargar la foto completa desde el enlace si hay internet
   const detailPhoto = content.querySelector('#detailPhoto');
   if (detailPhoto && detailPhoto.dataset.full) {
+    detailPhoto.addEventListener('click', () => {
+      if (detailPhoto.dataset.full) window.open(detailPhoto.dataset.full, '_blank', 'noopener');
+    });
     const full = new Image();
     full.onload = () => { detailPhoto.src = full.src; };
     full.onerror = () => { /* sin internet: se mantiene la miniatura */ };
