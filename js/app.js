@@ -113,6 +113,8 @@ function defaultSim() {
     statusOverridden: false,
     apps: [],
     notes: '',
+    photo: '',
+    photoThumb: '',
     color: '#3b82f6',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -417,6 +419,8 @@ function renderDetail() {
       </div>
     </div>
 
+      ${(sim.photo || sim.photoThumb) ? `<div class="detail-photo"><img id="detailPhoto" src="${sim.photoThumb || sim.photo}" data-full="${escAttr(sim.photo || '')}" alt="Foto de la SIM" /></div>` : ''}
+
     <div class="detail-body">
       <div class="info-grid">
         ${infoItem('Tipo', `${typeDef(sim.type).icon} ${esc(typeDef(sim.type).label)}`)}
@@ -451,6 +455,15 @@ function renderDetail() {
   content.querySelectorAll('[data-edit],[data-edit2]').forEach((b) => b.addEventListener('click', () => openForm(sim.id)));
   content.querySelectorAll('[data-del],[data-del2]').forEach((b) => b.addEventListener('click', () => confirmDelete(sim)));
   content.querySelector('[data-link-open]')  && null;
+
+  // Mostrar miniatura local al instante; cargar la foto completa desde el enlace si hay internet
+  const detailPhoto = content.querySelector('#detailPhoto');
+  if (detailPhoto && detailPhoto.dataset.full) {
+    const full = new Image();
+    full.onload = () => { detailPhoto.src = full.src; };
+    full.onerror = () => { /* sin internet: se mantiene la miniatura */ };
+    full.src = detailPhoto.dataset.full;
+  }
 }
 
 function infoItem(label, value, isCode = false, isHtml = false) {
@@ -504,6 +517,23 @@ function renderForm(id) {
       <div class="color-row">
         ${['#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#6366f1','#a855f7','#ec4899','#64748b'].map(c =>
           `<div class="color-dot ${sim.color===c?'selected':''}" data-color="${c}" style="background:${c}"></div>`).join('')}
+      </div>
+
+      <div class="field">
+        <span class="field-label">Foto del chip (opcional)</span>
+        <div class="photo-picker">
+          <div id="photoWrap">
+            ${sim.photoThumb ? `<img id="photoPreview" class="photo-preview" src="${sim.photoThumb}" alt="Foto de la SIM" />` : `<div id="photoPreview" class="photo-preview photo-empty">📷</div>`}
+          </div>
+          <input type="text" id="photoUrl" class="custom-app" placeholder="Pega el enlace de Google Drive de la foto" value="${escAttr(sim.photo || '')}" />
+          <div class="photo-actions">
+            <button type="button" class="btn outline" data-photo-url>🔗 Usar enlace</button>
+            <button type="button" class="btn outline" data-thumb-upload>🖼️ Mini foto local</button>
+            ${(sim.photo || sim.photoThumb) ? `<button type="button" class="btn danger-ghost" data-photo-remove>🗑️ Quitar</button>` : ''}
+          </div>
+          <input type="file" id="thumbInput" accept="image/*" class="hidden" />
+          <p class="hint">Pega el enlace de Drive y toca "Usar enlace" para la foto completa. La "Mini foto local" se ve sin internet.</p>
+        </div>
       </div>
 
       <label class="field">
@@ -580,7 +610,111 @@ function renderForm(id) {
     });
   });
 
-  // custom app input: Enter agrega
+  // Foto: enlace de Google Drive (completa) + miniatura local comprimida
+  let photoUrl = sim.photo || '';
+  let photoThumb = sim.photoThumb || '';
+
+  function toDirectImageUrl(u) {
+    const url = String(u || '').trim();
+    if (!url) return '';
+    let m = url.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+    if (m) return 'https://drive.google.com/uc?export=view&id=' + m[1];
+    m = url.match(/(?:drive\.google\.com\/open\?id=|docs\.google\.com\/uc\?id=|uc\?id=)([A-Za-z0-9_-]+)/);
+    if (m) return 'https://drive.google.com/uc?export=view&id=' + m[1];
+    if (/^https?:\/\//i.test(url)) return url;
+    return '';
+  }
+
+  function showPreview(src) {
+    let prev = content.querySelector('#photoPreview');
+    if (!prev) {
+      prev = document.createElement('img');
+      prev.id = 'photoPreview';
+      prev.className = 'photo-preview';
+      content.querySelector('#photoWrap').appendChild(prev);
+    }
+    prev.src = src;
+    prev.classList.remove('photo-empty');
+  }
+
+  function setPhotoUrl() {
+    const direct = toDirectImageUrl(content.querySelector('#photoUrl').value);
+    if (!direct) { toast('⚠️ Enlace no válido de Drive'); return; }
+    photoUrl = direct;
+    content.querySelector('#photoUrl').value = direct;
+    if (!photoThumb) showPreview(direct);
+    addRemoveButton();
+    toast('🔗 Enlace de foto guardado');
+  }
+
+  function compressThumb(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 600;
+          let { width, height } = img;
+          if (width > height && width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+          else if (height > MAX) { width = Math.round(width * MAX / height); height = MAX; }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.onerror = () => resolve('');
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function addRemoveButton() {
+    const fb = content.querySelector('.photo-actions');
+    if (content.querySelector('[data-photo-remove]')) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn danger-ghost';
+    b.textContent = '🗑️ Quitar';
+    b.dataset.photoRemove = '';
+    b.addEventListener('click', () => removePhoto());
+    fb.appendChild(b);
+  }
+
+  function setThumb(dataUrl) {
+    photoThumb = dataUrl;
+    showPreview(dataUrl);
+    addRemoveButton();
+    toast('🖼️ Mini foto guardada');
+  }
+
+  function removePhoto() {
+    photoUrl = '';
+    photoThumb = '';
+    const urlIn = content.querySelector('#photoUrl'); if (urlIn) urlIn.value = '';
+    const prev = content.querySelector('#photoPreview'); if (prev) prev.remove();
+    const wrap = content.querySelector('#photoWrap');
+    const ph = document.createElement('div');
+    ph.id = 'photoPreview';
+    ph.className = 'photo-preview photo-empty';
+    ph.textContent = '📷';
+    if (wrap) wrap.appendChild(ph);
+    const rm = content.querySelector('[data-photo-remove]'); if (rm) rm.remove();
+  }
+
+  content.querySelector('[data-photo-url]').addEventListener('click', () => setPhotoUrl());
+
+  const thumbInput = content.querySelector('#thumbInput');
+  thumbInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    thumbInput.value = '';
+    if (!file) return;
+    const dataUrl = await compressThumb(file);
+    if (dataUrl) setThumb(dataUrl);
+  });
+  content.querySelector('[data-thumb-upload]').addEventListener('click', () => thumbInput.click());
+  content.querySelectorAll('[data-photo-remove]').forEach((b) => b.addEventListener('click', () => removePhoto()));
+
   const customApp = $('#customApp');
   customApp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -656,6 +790,8 @@ function renderForm(id) {
       plan: f.plan.value.trim(),
       notes: f.notes.value.trim(),
       apps: [...selectedApps],
+      photo: photoUrl,
+      photoThumb,
       statusOverridden: true,
       statusManual: statusValue,
       color: (content.querySelector('.color-dot.selected') || {}).dataset?.color || sim.color || '#3b82f6',

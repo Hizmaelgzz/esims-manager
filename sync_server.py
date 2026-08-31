@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS esims (
     period     TEXT,
     apps       TEXT DEFAULT '[]',
     notes      TEXT,
+    photo      TEXT,
+    photo_thumb TEXT,
     color      TEXT,
     created_at BIGINT,
     updated_at BIGINT
@@ -81,6 +83,11 @@ def _init_db():
     try:
         cur = conn.cursor()
         cur.execute(DDL)
+        # Migrar tablas antiguas que no tengan la columna photo / statusManual etc.
+        cur.execute("ALTER TABLE esims ADD COLUMN IF NOT EXISTS photo TEXT")
+        cur.execute("ALTER TABLE esims ADD COLUMN IF NOT EXISTS photo_thumb TEXT")
+        cur.execute("ALTER TABLE esims ADD COLUMN IF NOT EXISTS status_overridden BOOLEAN DEFAULT FALSE")
+        cur.execute("ALTER TABLE esims ADD COLUMN IF NOT EXISTS warn_days INTEGER")
         conn.commit()
         cur.close()
     finally:
@@ -92,7 +99,7 @@ def _row_to_sim(row):
         return None
     (iid, name, iccid, phone, country, company, plan, status_manual,
      status_overridden, credit, last_recharge, next_recharge, warn_days,
-     period, apps, notes, color, created_at, updated_at) = row
+     period, apps, notes, photo, photo_thumb, color, created_at, updated_at) = row
     import json as _json
     return {
         "id": iid, "name": name, "iccid": iccid, "phone": phone,
@@ -102,7 +109,7 @@ def _row_to_sim(row):
         "nextRecharge": next_recharge, "warnDays": warn_days,
         "period": period,
         "apps": _json.loads(apps) if apps else [],
-        "notes": notes, "color": color,
+        "notes": notes, "photo": photo, "photoThumb": photo_thumb, "color": color,
         "createdAt": created_at, "updatedAt": updated_at,
     }
 
@@ -116,7 +123,8 @@ def _sim_to_row(s):
         s.get("credit"), s.get("lastRecharge") or None,
         s.get("nextRecharge") or None, s.get("warnDays"),
         s.get("period"), _json.dumps(s.get("apps") or []),
-        s.get("notes"), s.get("color"),
+        s.get("notes"), s.get("photo") or None, s.get("photoThumb") or None,
+        s.get("color"),
         s.get("createdAt") or None, s.get("updatedAt") or None,
     )
 
@@ -124,8 +132,8 @@ def _sim_to_row(s):
 UPSERT = """
 INSERT INTO esims (id, name, iccid, phone, country, company, plan,
     status_manual, status_overridden, credit, last_recharge, next_recharge,
-    warn_days, period, apps, notes, color, created_at, updated_at)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    warn_days, period, apps, notes, photo, photo_thumb, color, created_at, updated_at)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 ON CONFLICT (id) DO UPDATE SET
     name=EXCLUDED.name, iccid=EXCLUDED.iccid, phone=EXCLUDED.phone,
     country=EXCLUDED.country, company=EXCLUDED.company, plan=EXCLUDED.plan,
@@ -134,16 +142,16 @@ ON CONFLICT (id) DO UPDATE SET
     credit=EXCLUDED.credit, last_recharge=EXCLUDED.last_recharge,
     next_recharge=EXCLUDED.next_recharge, warn_days=EXCLUDED.warn_days,
     period=EXCLUDED.period, apps=EXCLUDED.apps, notes=EXCLUDED.notes,
-    color=EXCLUDED.color, created_at=EXCLUDED.created_at,
-    updated_at=EXCLUDED.updated_at
+    photo=EXCLUDED.photo, photo_thumb=EXCLUDED.photo_thumb, color=EXCLUDED.color,
+    created_at=EXCLUDED.created_at, updated_at=EXCLUDED.updated_at
     WHERE esims.updated_at <= EXCLUDED.updated_at
 """
 
 INSERT_ONLY = """
 INSERT INTO esims (id, name, iccid, phone, country, company, plan,
     status_manual, status_overridden, credit, last_recharge, next_recharge,
-    warn_days, period, apps, notes, color, created_at, updated_at)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    warn_days, period, apps, notes, photo, photo_thumb, color, created_at, updated_at)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 ON CONFLICT (id) DO NOTHING
 """
 
@@ -208,8 +216,8 @@ def pull():
         conn.close()
     colnames = ["id","name","iccid","phone","country","company","plan",
                 "status_manual","status_overridden","credit","last_recharge",
-                "next_recharge","warn_days","period","apps","notes","color",
-                "created_at","updated_at"]
+                "next_recharge","warn_days","period","apps","notes","photo",
+                "photo_thumb","color","created_at","updated_at"]
     records = [_row_to_sim([r[colnames.index(c)] for c in colnames]) for r in rows]
     return jsonify({"sims": records, "serverTime": int(time.time() * 1000)})
 
