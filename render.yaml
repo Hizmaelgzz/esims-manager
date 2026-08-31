@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: esims-manager-sync
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn sync_server:app
+    envVars:
+      - key: ESIM_API_KEY
+        sync: false
+        value: CAMBIA_ESTA_CLAVE
+      - key: PYTHONUNBUFFERED
+        value: true
