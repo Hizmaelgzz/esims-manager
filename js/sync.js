@@ -43,64 +43,63 @@
       window.__syncTimer = setTimeout(() => { this.doSync().catch(() => {}); }, 4000);
     },
 
-    async doSync() {
-      const url = this.getUrl();
-      if (!url) return { pushed: 0, pulled: 0 };
-      const base = url.replace(/\/+$/, '');
+    _base() { return this.getUrl().replace(/\/+$/, ''); },
+    _headers() {
+      const h = { 'Content-Type': 'application/json' };
       const key = this.getKey();
-
-      let lastSync = (await DB.getMeta(CFG_LAST)) || 0;
-
-      // 1) Subir los cambios locales desde la última sincronización
-      const localSims = await DB.getAll();
-      const changed = localSims.filter((s) => (s.updatedAt || 0) > lastSync);
-
-      const headers = { 'Content-Type': 'application/json' };
-      if (key) headers['X-Api-Key'] = key;
-
-      const pushRes = await fetch(base + '/api/sync/push', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ since: lastSync, sims: changed, clientId: 'pwa' })
-      });
-      if (!pushRes.ok) throw new Error('push ' + pushRes.status);
-
-      const pushData = await pushRes.json();
-
-      // 2) Obtener cambios remotos que no tengo
-      const pullRes = await fetch(base + '/api/sync/pull?since=' + lastSync, { headers });
-      if (!pullRes.ok) throw new Error('pull ' + pullRes.status);
-      const pullData = await pullRes.json();
-
-      // 3) Fusionar con deduplicación por ICCID/número para no volver a
-      //    duplicar chips (p. ej. si la nube tiene datos repetidos).
-      const remote = pullData.sims || [];
-      const localMap = new Map(localSims.map((s) => [s.id, s]));
-      const incoming = [];
-      for (const r of remote) {
-        const l = localMap.get(r.id);
-        if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) {
-          incoming.push({ ...(window.__defaultSim ? window.__defaultSim() : {}), ...r });
-        }
-      }
-      let added = 0, updated = 0, toWrite = incoming;
-      if (incoming.length && typeof window.mergeIncoming === 'function') {
-        const m = window.mergeIncoming(localSims, this.dedupeRemote(incoming));
-        toWrite = m.toPut;
-        added = m.added; updated = m.updated;
-      }
-      if (toWrite.length) {
-        await DB.bulkPut(toWrite);
-      }
-
-      const pulled = added + updated;
-
-      // Guardar timestamp de sincronización
+      if (key) h['X-Api-Key'] = key;
+      return h;
+    },
+    async _markSaved() {
       const now = Date.now();
       await DB.setMeta(CFG_LAST, now);
       localStorage.setItem(CFG_LAST, String(now));
+      return now;
+    },
 
-      return { pushed: (pushData.accepted || changed.length), pulled };
+    // SUBIR: envía los datos de ESTE dispositivo al servidor.
+    // Los chips nuevos se crean en la nube; si el ICCID (o número) ya existe,
+    // se actualizan los datos de ese mismo.
+    async upload({ since = 0 } = {}) {
+      if (!this.getUrl()) return { uploaded: 0 };
+      const localSims = await DB.getAll();
+      const sims = since ? localSims.filter((s) => (s.updatedAt || 0) > since) : localSims;
+      const res = await fetch(this._base() + '/api/sync/push', {
+        method: 'POST', headers: this._headers(),
+        body: JSON.stringify({ since, sims, clientId: 'pwa' })
+      });
+      if (!res.ok) throw new Error('subida HTTP ' + res.status);
+      const data = await res.json();
+      await this._markSaved();
+      return { uploaded: data.accepted || sims.length };
+    },
+
+    // DESCARGAR: trae los datos del servidor a ESTE dispositivo.
+    // Los chips de la nube se crean aquí; si el ICCID (o número) ya existe
+    // localmente, se actualizan los datos de ese mismo.
+    async download({ since = 0 } = {}) {
+      if (!this.getUrl()) return { downloaded: 0, added: 0, updated: 0 };
+      const localSims = await DB.getAll();
+      const res = await fetch(this._base() + '/api/sync/pull?since=' + since, { headers: this._headers() });
+      if (!res.ok) throw new Error('descarga HTTP ' + res.status);
+      const data = await res.json();
+      const remote = this.dedupeRemote(data.sims || []);
+      let added = 0, updated = 0, toWrite = remote;
+      if (remote.length && typeof window.mergeIncoming === 'function') {
+        const m = window.mergeIncoming(localSims, remote);
+        toWrite = m.toPut; added = m.added; updated = m.updated;
+      }
+      if (toWrite.length) await DB.bulkPut(toWrite);
+      await this._markSaved();
+      return { downloaded: added + updated, added, updated };
+    },
+
+    async doSync() {
+      if (!this.getUrl()) return { uploaded: 0, downloaded: 0 };
+      const lastSync = (await DB.getMeta(CFG_LAST)) || 0;
+      const up = await this.upload({ since: lastSync });
+      const dl = await this.download({ since: lastSync });
+      return { uploaded: up.uploaded, downloaded: dl.downloaded };
     },
 
     async runManualSync() {
@@ -113,7 +112,7 @@
         const res = await this.doSync();
         await window.loadData && window.loadData();
         render();
-        toast(`Sync ✅ (↑${res.pushed} ↓${res.pulled})`);
+        toast(`Sync ✅ (↑${res.uploaded} ↓${res.downloaded})`);
       } catch (e) {
         toast('Sync falló ⚠️ ' + (e.message || ''));
       }

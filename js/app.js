@@ -1225,21 +1225,37 @@ function showSyncModal() {
   let html = `<div class="settings-block">
     <p>Tu servidor: <b>${esc(loadSyncModule().getUrl() || 'No configurado (solo local)')}</b></p>
     <p class="muted">Última sincronización: ${esc(loadSyncModule().lastSyncLabel() || 'nunca')}</p>
-    <div class="form-actions"><button class="btn primary" id="syncNow">🔄 Sincronizar ahora</button></div>
+    <div class="form-actions" style="flex-wrap:wrap">
+      <button class="btn primary" id="syncUpload">⬆️ Subir datos</button>
+      <button class="btn" id="syncDownload">⬇️ Descargar datos</button>
+    </div>
+    <p class="muted" style="font-size:.85em;margin-top:10px;line-height:1.4">
+      <b>Subir</b>: envía los datos de este dispositivo a la nube. Los chips nuevos se crean y los que ya existan (mismo ICCID o número) se actualizan.<br><br>
+      <b>Descargar</b>: trae los datos de la nube a este dispositivo. Los chips nuevos se crean y los que ya existan (mismo ICCID o número) se actualizan.
+    </p>
     <div id="syncResult" class="muted" style="margin-top:10px"></div>
   </div>`;
   openModal({ title: '☁️ Sincronización', body: html, actions: [{ label: 'Cerrar', class: 'btn ghost', onClick: closeModal }] });
-  $('#syncNow').addEventListener('click', async () => {
+  const run = async (fn, label) => {
     const r = $('#syncResult');
-    r.textContent = 'Sincronizando…';
+    if (!loadSyncModule().getUrl()) {
+      r.textContent = '⚠️ No hay servidor configurado. Agrégalo en Ajustes.';
+      return;
+    }
+    r.textContent = label + '…';
     try {
-      const res = await loadSyncModule().doSync();
-      r.textContent = `✅ Subidos ${res.pushed}, descargados ${res.pulled}.`;
-      await load(); render();
+      const res = await loadSyncModule()[fn]();
+      r.textContent = fn === 'upload'
+        ? `✅ Subidos ${res.uploaded} chip(s) a la nube.`
+        : `✅ Descargados ${res.downloaded} chip(s) (${res.added} nuevos, ${res.updated} actualizados).`;
+      if (window.loadData) await window.loadData();
+      render();
     } catch (e) {
       r.textContent = '⚠️ Error: ' + (e.message || 'sin conexión');
     }
-  });
+  };
+  $('#syncUpload').addEventListener('click', () => run('upload', 'Subiendo datos'));
+  $('#syncDownload').addEventListener('click', () => run('download', 'Descargando datos'));
 }
 
 /* ============================================================

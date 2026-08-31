@@ -161,6 +161,22 @@ def _sim_to_row(s):
     )
 
 
+def _find_match_id(cur, sim):
+    """Devuelve el id de un chip ya guardado con el mismo ICCID (o, si no hay
+    ICCID, con el mismo teléfono), para poder actualizarlo en lugar de crear
+    un duplicado. Devuelve None si no existe ningún match."""
+    ic = (sim.get("iccid") or "").strip()
+    ph = (sim.get("phone") or "").strip()
+    if ic:
+        cur.execute("SELECT id FROM esims WHERE iccid = %s AND id <> %s LIMIT 1", (ic, sim.get("id")))
+    elif ph:
+        cur.execute("SELECT id FROM esims WHERE phone = %s AND id <> %s LIMIT 1", (ph, sim.get("id")))
+    else:
+        return None
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
 UPSERT = """
 INSERT INTO esims (id, name, iccid, phone, country, company, plan,
     status_manual, status_overridden, credit, last_recharge, next_recharge,
@@ -217,10 +233,25 @@ def push():
         for sim in sims:
             if not sim.get("id"):
                 continue
-            # insertar solo si es mas reciente (para no pisar datos mas nuevos)
-            cur.execute(INSERT_ONLY, _sim_to_row(sim))
-            if cur.rowcount == 0:
-                cur.execute(UPSERT, _sim_to_row(sim))
+            row = _sim_to_row(sim)
+            # 1) ¿Ya existe la fila con este mismo id?
+            cur.execute("SELECT 1 FROM esims WHERE id = %s", (sim["id"],))
+            if cur.fetchone() is not None:
+                # actualizar por id (solo si el nuestro es más reciente)
+                cur.execute(UPSERT, row)
+                if cur.rowcount > 0:
+                    accepted += 1
+                continue
+            # 2) Si el id no existe, buscar el mismo chip por ICCID (o número si no
+            #    hay ICCID) para actualizar ESE registro en vez de crear un duplicado.
+            match_id = _find_match_id(cur, sim)
+            if match_id:
+                cur.execute(UPSERT, _sim_to_row({**sim, "id": match_id}))
+                if cur.rowcount > 0:
+                    accepted += 1
+                continue
+            # 3) Chip completamente nuevo
+            cur.execute(INSERT_ONLY, row)
             if cur.rowcount > 0:
                 accepted += 1
         conn.commit()
