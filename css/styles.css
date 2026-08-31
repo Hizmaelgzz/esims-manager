@@ -37,6 +37,7 @@ body {
 .green { color: var(--green); }
 .orange { color: var(--orange); }
 .blue { color: var(--primary); }
+.gray { color: #cbd5e1; }
 .danger-text { color: var(--red); }
 
 /* ---------- App bar ---------- */
@@ -454,8 +455,22 @@ code {
 .app-chip.selected { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
 .custom-app { margin-top: 8px; }
 
-.form-actions { display: flex; gap: 10px; margin-top: 10px; }
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+}
 .form-actions .btn { flex: 1; }
+
+/* Barra de acciones del formulario fija sobre la navegación inferior */
+#view-form .form-actions {
+  position: sticky;
+  bottom: 92px;
+  z-index: 20;
+  background: linear-gradient(180deg, transparent, var(--bg) 30%);
+  padding-bottom: 4px;
+}
 
 /* ---------- Modal ---------- */
 .modal-backdrop {

@@ -6,9 +6,7 @@
 
 // Configuración de campos y opciones
 const COMPANIES = [
-  'Claro', 'Movistar', 'Entel', 'Tigo', 'Wom', 'AT&T', 'T-Mobile', 'Verizon',
-  'Vodafone', 'O2', 'Orange', 'TIM', 'Airalo', 'Holafly', 'Nomad', 'eSIM Plus',
-  'Ubigi', 'Airalo', 'esim.me', 'Telcel', 'Bitel', 'Otro'
+  'Telcel', 'IPB', 'Movistar', 'Dalefon', 'Pillofon', 'Diri', 'AT&T', 'BLACK'
 ];
 
 const APP_OPTIONS = [
@@ -17,15 +15,19 @@ const APP_OPTIONS = [
   'Netflix', 'Spotify', 'Delivery apps', 'Otro'
 ];
 
-const STATUS_OPTIONS = [
-  { value: 'active', label: 'Activa', icon: '🟢', badgeColor: '#bbf7d0' },
-  { value: 'recharge_pending', label: 'Requiere recarga', icon: '🟠', badgeColor: '#fed7aa' },
-  { value: 'soon', label: 'Por vencer/pronto', icon: '🟡', badgeColor: '#fde68a' },
-  { value: 'inactive', label: 'Inactiva', icon: '⚪', badgeColor: '#e2e8f0' },
-  { value: 'suspended', label: 'Suspendida', icon: '🔴', badgeColor: '#fecaca' }
+const TYPE_OPTIONS = [
+  { value: 'SIM', label: 'SIM', icon: '📟' },
+  { value: 'eSIM', label: 'eSIM', icon: '📱' }
 ];
 
-const PERIOD_OPTIONS = ['Diaria', 'Semanal', 'Quincenal', 'Mensual', 'Cada 2 meses', 'Trimestral', 'Semestral', 'Anual', 'Sin periodo'];
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Activa', icon: '🟢', badgeColor: '#bbf7d0' },
+  { value: 'inactive', label: 'Inactiva', icon: '⚪', badgeColor: '#e2e8f0' }
+];
+
+function typeDef(val) {
+  return TYPE_OPTIONS.find((t) => t.value === val) || TYPE_OPTIONS[1];
+}
 
 let state = {
   sims: [],
@@ -61,24 +63,17 @@ function todayISO() {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 
-// Estado derivado de una SIM en función de fechas/crédito
+// Estado de una SIM (activa o inactiva)
 function computeStatus(sim) {
-  if (sim.statusOverridden && sim.statusManual) return sim.statusManual;
-  if (sim.credit !== null && sim.credit !== '' && Number(sim.credit) <= 0) return 'recharge_pending';
-  const dn = daysUntil(sim.nextRecharge);
-  if (dn !== null) {
-    if (dn < 0) return 'recharge_pending';
-    if (sim.warnDays !== null && dn <= sim.warnDays) return 'soon';
-  }
-  return 'active';
+  return sim.statusManual === 'inactive' ? 'inactive' : 'active';
 }
 
 function statusDef(val) {
-  return STATUS_OPTIONS.find((s) => s.value === val) || STATUS_OPTIONS[3];
+  return STATUS_OPTIONS.find((s) => s.value === val) || STATUS_OPTIONS[0];
 }
 
 function sortSims(list) {
-  const rank = { active: 0, recharge_pending: 1, soon: 2, inactive: 3, suspended: 4 };
+  const rank = { active: 0, inactive: 1 };
   return [...list].sort((a, b) => {
     const r = (rank[computeStatus(a)] ?? 9) - (rank[computeStatus(b)] ?? 9);
     return r !== 0 ? r : (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -109,18 +104,13 @@ function defaultSim() {
   return {
     id: null,
     name: '',
+    type: 'eSIM',
     iccid: '',
     phone: '',
-    country: '',
     company: '',
     plan: '',
     statusManual: 'active',
     statusOverridden: false,
-    credit: '',
-    lastRecharge: null,
-    nextRecharge: null,
-    warnDays: 3,
-    period: 'Mensual',
     apps: [],
     notes: '',
     color: '#3b82f6',
@@ -273,18 +263,18 @@ function renderStatsStrip() {
   const wrap = $('#statsStrip');
   const all = state.sims;
   const active = all.filter((s) => computeStatus(s) === 'active').length;
-  const pending = all.filter((s) => ['recharge_pending', 'soon', 'suspended'].includes(computeStatus(s))).length;
+  const inactive = all.filter((s) => computeStatus(s) === 'inactive').length;
   const totalApps = new Set(all.flatMap((s) => s.apps || [])).size;
   wrap.innerHTML = `
-    <div class="stat-card"><div class="stat-num">${all.length}</div><div class="stat-label">eSIMs totales</div></div>
+    <div class="stat-card"><div class="stat-num">${all.length}</div><div class="stat-label">SIMs totales</div></div>
     <div class="stat-card"><div class="stat-num green">${active}</div><div class="stat-label">Activas</div></div>
-    <div class="stat-card"><div class="stat-num orange">${pending}</div><div class="stat-label">Atención</div></div>
+    <div class="stat-card"><div class="stat-num gray">${inactive}</div><div class="stat-label">Inactivas</div></div>
     <div class="stat-card"><div class="stat-num blue">${totalApps}</div><div class="stat-label">Apps usadas</div></div>
   `;
 }
 
 function needAttention(list) {
-  return list.filter((s) => ['recharge_pending', 'soon', 'suspended'].includes(computeStatus(s)));
+  return list.filter((s) => computeStatus(s) === 'inactive');
 }
 
 function renderDashboard() {
@@ -295,7 +285,7 @@ function renderDashboard() {
   let html = '';
 
   if (attention.length) {
-    html += `<div class="section-head"><h2>⚠️ Requieren atención</h2><button data-goto-list class="link-btn">Ver todo</button></div>
+    html += `<div class="section-head"><h2>⚪ Inactivas</h2><button data-goto-list class="link-btn">Ver todo</button></div>
     <div class="attention-grid">`;
     attention.forEach((s) => {
       html += simCard(s);
@@ -304,17 +294,17 @@ function renderDashboard() {
   }
 
   if (!attention.length) {
-    html += `<div class="empty-note">🎉 Todo está al día. No hay eSIMs que requieran atención.</div>`;
+    html += `<div class="empty-note">🎉 Todas tus SIMs están activas.</div>`;
   }
 
-  html += `<div class="section-head"><h2>Últimas eSIMs</h2></div>`;
+  html += `<div class="section-head"><h2>Últimas SIMs</h2></div>`;
 
   if (!list.length) {
     html += `<div class="empty-state">
       <div class="empty-icon">📱</div>
-      <h3>No tienes eSIMs registradas</h3>
-      <p>Toca el botón <b>＋</b> para agregar tu primera eSIM y empezar a organizarlas.</p>
-      <button class="btn primary" data-add>＋ Agregar eSIM</button>
+      <h3>No tienes SIMs registradas</h3>
+      <p>Toca el botón <b>＋</b> para agregar tu primera SIM y empezar a organizarlas.</p>
+      <button class="btn primary" data-add>＋ Agregar SIM</button>
     </div>`;
   } else {
     html += `<div class="grid">`;
@@ -372,7 +362,6 @@ function renderList() {
 function simCard(s) {
   const st = computeStatus(s);
   const stD = statusDef(st);
-  const days = daysUntil(s.nextRecharge);
   const apps = (s.apps || []).slice(0, 4);
   return `
     <div class="sim-card" data-id="${s.id}" style="--accent:${s.color || '#3b82f6'}">
@@ -380,14 +369,13 @@ function simCard(s) {
         <div class="sim-avatar" style="background:${s.color || '#3b82f6'}">${(s.name || '?').charAt(0).toUpperCase()}</div>
         <div class="sim-ident">
           <div class="sim-name">${esc(s.name || 'Sin nombre')}</div>
-          <div class="sim-sub">${esc(s.company || 'Compañía')}${s.country ? ' · ' + esc(s.country) : ''}</div>
+          <div class="sim-sub">${esc(s.company || 'Compañía')}</div>
         </div>
         <span class="badge" style="--bcolor:${stD.badgeColor}">${stD.icon} ${stD.label}</span>
       </div>
       <div class="sim-meta">
+        <span>${typeDef(s.type).icon} ${esc(typeDef(s.type).label)}</span>
         ${s.phone ? `<span>📞 ${esc(s.phone)}</span>` : ''}
-        ${days !== null ? `<span class="${days <= (s.warnDays ?? 0) ? 'danger-text' : ''}">⏳ ${days < 0 ? 'venció' : days + ' días'}</span>` : ''}
-        ${s.credit !== '' && s.credit !== null ? `<span>💰 $${esc(s.credit)}</span>` : ''}
       </div>
       ${apps.length ? `<div class="sim-apps">${apps.map(a => `<span class="app-tag">${esc(a)}</span>`).join('')}${(s.apps||[]).length > 4 ? `<span class="app-tag more">+${(s.apps||[]).length-4}</span>` : ''}</div>` : ''}
     </div>`;
@@ -412,7 +400,6 @@ function renderDetail() {
   }
   const st = computeStatus(sim);
   const stD = statusDef(st);
-  const days = daysUntil(sim.nextRecharge);
 
   let html = `
     <div class="detail-header" style="--accent:${sim.color}">
@@ -432,15 +419,12 @@ function renderDetail() {
 
     <div class="detail-body">
       <div class="info-grid">
+        ${infoItem('Tipo', `${typeDef(sim.type).icon} ${esc(typeDef(sim.type).label)}`)}
         ${infoItem('ICCID', sim.iccid || '—', true)}
         ${infoItem('Número de teléfono', sim.phone || '—')}
         ${infoItem('Compañía', sim.company || '—')}
-        ${infoItem('País', sim.country || '—')}
         ${infoItem('Plan', sim.plan || '—')}
-        ${infoItem('Periodo de recarga', sim.period || '—')}
-        ${infoItem('Crédito actual', sim.credit !== '' && sim.credit !== null ? '$' + sim.credit : '—')}
-        ${infoItem('Última recarga', sim.lastRecharge ? formatDate(sim.lastRecharge) : '—')}
-        ${infoItem('Próxima recarga', sim.nextRecharge ? formatDate(sim.nextRecharge) + (days!==null?` <span class="${days<=0?'danger-text':'muted'}">(${days<0?'venció':days+' días'})</span>`:'') : '—', false, true)}
+        ${infoItem('Estado', stD.icon + ' ' + stD.label)}
       </div>
 
       ${(sim.apps || []).length ? `
@@ -510,7 +494,6 @@ function renderForm(id) {
   const sim = id ? { ...defaultSim(), ...state.sims.find((s) => s.id === id) } : defaultSim();
   const content = $('#view-form');
   const selectedApps = new Set(sim.apps || []);
-  const selectStatus = sim.statusOverridden ? sim.statusManual : null;
 
   let html = `
     <div class="form-header">
@@ -529,23 +512,30 @@ function renderForm(id) {
       </label>
 
       <label class="field">
-        <span>ICCID</span>
-        <input name="iccid" value="${escAttr(sim.iccid || '')}" placeholder="8930 1234 5678 9012 34" />
+        <span>ICCID *</span>
+        <input name="iccid" required value="${escAttr(sim.iccid || '')}" placeholder="8930 1234 5678 9012 34" />
       </label>
 
       <label class="field">
-        <span>Número de teléfono</span>
-        <input name="phone" inputmode="tel" value="${escAttr(sim.phone || '')}" placeholder="+591 71234567" />
+        <span>Número de teléfono *</span>
+        <input name="phone" required inputmode="tel" value="${escAttr(sim.phone || '')}" placeholder="+52 71234567" />
       </label>
+
+      <div class="field">
+        <span class="field-label">Tipo *</span>
+        <div class="status-picker">
+          ${TYPE_OPTIONS.map(t => `<button type="button" class="status-opt ${sim.type===t.value?'selected':''}" data-type="${t.value}">${t.icon} ${t.label}</button>`).join('')}
+        </div>
+      </div>
 
       <div class="field-row">
         <label class="field">
           <span>Compañía</span>
-          <select name="company">${COMPANIES.map(c => `<option ${sim.company===c?'selected':''}>${c}</option>`).join('')}<option value="">Otro…</option></select>
+          <select name="company">${COMPANIES.map(c => `<option ${sim.company===c?'selected':''}>${c}</option>`).join('')}<option value="">Personalizada…</option></select>
         </label>
         <label class="field">
-          <span>País</span>
-          <input name="country" value="${escAttr(sim.country || '')}" placeholder="Bolivia" />
+          <span>Otro proveedor</span>
+          <input id="customCompany" value="${!COMPANIES.includes(sim.company) && sim.company ? escAttr(sim.company) : ''}" placeholder="Nombre" />
         </label>
       </div>
 
@@ -554,40 +544,11 @@ function renderForm(id) {
         <input name="plan" value="${escAttr(sim.plan || '')}" placeholder="Ej: Prepago 20GB" />
       </label>
 
-      <div class="field-row">
-        <label class="field">
-          <span>Crédito actual (B$-USD)</span>
-          <input name="credit" inputmode="decimal" type="number" step="0.01" value="${escAttr(sim.credit ?? '')}" placeholder="0.00" />
-        </label>
-        <label class="field">
-          <span>Periodo de recarga</span>
-          <select name="period">${PERIOD_OPTIONS.map(p => `<option ${sim.period===p?'selected':''}>${p}</option>`).join('')}</select>
-        </label>
-      </div>
-
-      <div class="field-row">
-        <label class="field">
-          <span>Última recarga</span>
-          <input name="lastRecharge" type="date" value="${sim.lastRecharge ? isoDate(sim.lastRecharge) : ''}" />
-        </label>
-        <label class="field">
-          <span>Próxima recarga / vencimiento</span>
-          <input name="nextRecharge" type="date" value="${sim.nextRecharge ? isoDate(sim.nextRecharge) : ''}" />
-        </label>
-      </div>
-
-      <label class="field">
-        <span>Avisarme con anticipación (días)</span>
-        <input name="warnDays" type="number" min="0" max="90" value="${escAttr(sim.warnDays ?? 3)}" />
-      </label>
-
       <div class="field">
         <span class="field-label">Estado</span>
         <div class="status-picker">
-          <button type="button" class="status-opt ${!sim.statusOverridden ? 'selected' : ''}" data-status="auto">✨ Automático</button>
-          ${STATUS_OPTIONS.map(so => `<button type="button" class="status-opt ${selectStatus===so.value?'selected':''}" data-status="${so.value}">${so.icon} ${so.label}</button>`).join('')}
+          ${STATUS_OPTIONS.map(so => `<button type="button" class="status-opt ${sim.statusManual===so.value?'selected':''}" data-status="${so.value}">${so.icon} ${so.label}</button>`).join('')}
         </div>
-        <p class="hint">"Automático" calcula el estado según crédito y fecha de vencimiento.</p>
       </div>
 
       <div class="field">
@@ -655,11 +616,18 @@ function renderForm(id) {
     });
   });
 
-  // status
-  content.querySelectorAll('.status-opt').forEach((btn) => {
+  // tipo (SIM / eSIM)
+  content.querySelectorAll('.status-opt[data-type]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      // si es automático, desmarcar override; si no, fijar manual
-      content.querySelectorAll('.status-opt').forEach((b) => b.classList.remove('selected'));
+      content.querySelectorAll('.status-opt[data-type]').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+
+  // estado (activa / inactiva)
+  content.querySelectorAll('.status-opt[data-status]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll('.status-opt[data-status]').forEach((b) => b.classList.remove('selected'));
       btn.classList.add('selected');
     });
   });
@@ -669,34 +637,34 @@ function renderForm(id) {
   $('#simForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
-    const selectedStatus = content.querySelector('.status-opt.selected');
-    const statusValue = selectedStatus ? selectedStatus.dataset.status : 'auto';
+    const selectedStatus = content.querySelector('.status-opt[data-status].selected');
+    const statusValue = selectedStatus ? selectedStatus.dataset.status : 'active';
+    const selectedType = content.querySelector('.status-opt[data-type].selected');
+    const typeValue = selectedType ? selectedType.dataset.type : 'eSIM';
+
+    const customCompany = content.querySelector('#customCompany').value.trim();
+    const company = f.company.value || customCompany;
 
     const data = {
       ...defaultSim(),
       ...sim,
       name: f.name.value.trim(),
+      type: typeValue,
       iccid: f.iccid.value.trim(),
       phone: f.phone.value.trim(),
-      company: f.company.value,
-      country: f.country.value.trim(),
+      company,
       plan: f.plan.value.trim(),
-      credit: f.credit.value !== '' ? String(f.credit.value) : '',
-      period: f.period.value,
-      lastRecharge: f.lastRecharge.value ? new Date(f.lastRecharge.value + 'T12:00:00').getTime() : null,
-      nextRecharge: f.nextRecharge.value ? new Date(f.nextRecharge.value + 'T12:00:00').getTime() : null,
-      warnDays: f.warnDays.value !== '' ? Number(f.warnDays.value) : null,
       notes: f.notes.value.trim(),
       apps: [...selectedApps],
-      statusOverridden: statusValue !== 'auto',
-      statusManual: statusValue !== 'auto' ? statusValue : sim.statusManual,
+      statusOverridden: true,
+      statusManual: statusValue,
       color: (content.querySelector('.color-dot.selected') || {}).dataset?.color || sim.color || '#3b82f6',
     };
 
     const saved = await DB.put(data);
     const idx = state.sims.findIndex((x) => x.id === saved.id);
     if (idx >= 0) state.sims[idx] = saved; else state.sims.push(saved);
-    toast('eSIM guardada ✅');
+    toast('SIM guardada ✅');
     goBackAfterForm();
     autoSync();
   });
@@ -767,7 +735,7 @@ function showStatsModal() {
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-num">${all.length}</div><div class="stat-label">Totales</div></div>
       <div class="stat-card"><div class="stat-num green">${all.filter(s=>computeStatus(s)==='active').length}</div><div class="stat-label">Activas</div></div>
-      <div class="stat-card"><div class="stat-num orange">${needAttention(all).length}</div><div class="stat-label">Atención</div></div>
+      <div class="stat-card"><div class="stat-num gray">${needAttention(all).length}</div><div class="stat-label">Inactivas</div></div>
     </div>
     <h4>Apps más usadas</h4>
     ${topApps.length ? topApps.map(([a, n]) => `<div class="bar-row"><span>${esc(a)}</span><div class="bar"><div class="bar-fill" style="width:${(n/Math.max(...topApps.map(t=>t[1]))*100)}%"></div></div><b>${n}</b></div>`).join('') : '<p class="muted">Sin datos.</p>'}
@@ -796,11 +764,16 @@ function showExportModal() {
   openModal({ title: '📤 Respaldo', body: html, actions: [{ label: 'Cerrar', class: 'btn ghost', onClick: closeModal }] });
 
   $('#btnExportJson').addEventListener('click', () => {
+    const incompletas = state.sims.filter((s) => !s.iccid || !s.phone);
+    if (incompletas.length) {
+      toast(`⚠️ Hay ${incompletas.length} SIM(s) sin ICCID o número. Complétalas para exportar.`);
+      return;
+    }
     const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), sims: state.sims }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'esims-' + todayISO() + '.json';
+    a.download = 'sims-' + todayISO() + '.json';
     a.click();
     URL.revokeObjectURL(url);
     toast('Respaldo descargado 📥');
@@ -813,13 +786,36 @@ function showExportModal() {
     const text = await file.text();
     try {
       const data = JSON.parse(text);
-      const items = (data.sims || []).map((s) => ({ ...defaultSim(), ...s }));
-      await DB.bulkPut(items);
-      await load();
-      render();
-      closeModal();
-      toast(`Importados ${items.length} eSIMs 📥`);
-      autoSync();
+      const raw = data.sims || [];
+      // Filtrar las que no tienen ICCID y número (campos obligatorios)
+      const validos = [];
+      const rechazados = [];
+      raw.forEach((s) => {
+        if (s.iccid && s.phone) validos.push({ ...defaultSim(), ...s });
+        else rechazados.push(s);
+      });
+      if (validos.length) {
+        const existing = await DB.getAll();
+        const existingIds = new Set(existing.map((x) => x.id));
+        let added = 0, updated = 0;
+        for (const v of validos) {
+          if (!v.id || !existingIds.has(v.id)) {
+            if (!v.id) { v.id = 'sim_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+            added++;
+          } else {
+            updated++;
+          }
+        }
+        await DB.bulkPut(validos);
+        await load();
+        render();
+        closeModal();
+        const msg = `Importados ${validos.length} (${added} nuevos, ${updated} actualiz.)`;
+        toast(rechazados.length ? `${msg}. Omitidos ${rechazados.length} sin ICCID/número ⚠️` : msg + ' 📥');
+        autoSync();
+      } else {
+        toast('⚠️ Ninguna fila válida (faltan ICCID o número)');
+      }
     } catch (err) {
       toast('Archivo inválido ⚠️');
     }
