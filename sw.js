@@ -1,5 +1,5 @@
 /* Service Worker - eSIM Manager */
-const CACHE = 'esim-manager-v1';
+const CACHE = 'esim-manager-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -29,21 +29,23 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // No interceptar llamadas a la API / red diferent
+  // No interceptar llamadas a la API / otros orígenes
   if (e.request.method !== 'GET' ||
-      url.origin !== self.location.origin ||
-      url.pathname.includes('/api/')) return;
+      url.origin !== self.location.origin) return;
+  // El propio sw.js no se cachea (siempre obtener la última versión)
+  if (url.pathname.endsWith('/sw.js')) return;
 
+  // Estrategia network-first: siempre intentar la última versión en línea;
+  // si no hay internet, caer a la caché (funciona offline).
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fetched = fetch(e.request).then((resp) => {
+    fetch(e.request)
+      .then((resp) => {
         if (resp && resp.status === 200) {
           const copy = resp.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }
         return resp;
-      }).catch(() => cached);
-      return cached || fetched;
-    })
+      })
+      .catch(() => caches.match(e.request).then((m) => m || caches.match('./')))
   );
 });
