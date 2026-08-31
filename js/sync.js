@@ -23,6 +23,20 @@
       return t ? new Date(Number(t)).toLocaleString('es-ES') : null;
     },
 
+    // Colapsa registros remotos que representan el mismo chip
+    // (mismo ICCID, o mismo teléfono si no hay ICCID), quedándose con el más reciente.
+    dedupeRemote(remote) {
+      const byKey = new Map();
+      for (const r of remote) {
+        const ic = (r.iccid != null ? String(r.iccid) : '').trim();
+        const ph = (r.phone != null ? String(r.phone) : '').trim();
+        const key = ic ? ('ic:' + ic) : (ph ? ('ph:' + ph) : ('id:' + r.id));
+        const prev = byKey.get(key);
+        if (!prev || (r.updatedAt || 0) >= (prev.updatedAt || 0)) byKey.set(key, r);
+      }
+      return [...byKey.values()];
+    },
+
     schedule() {
       // Sincronización automática diferida (se dispara tras cambios)
       if (window.__syncTimer) clearTimeout(window.__syncTimer);
@@ -58,21 +72,28 @@
       if (!pullRes.ok) throw new Error('pull ' + pullRes.status);
       const pullData = await pullRes.json();
 
-      // 3) Fusionar: la versión con updatedAt mayor gana
+      // 3) Fusionar con deduplicación por ICCID/número para no volver a
+      //    duplicar chips (p. ej. si la nube tiene datos repetidos).
       const remote = pullData.sims || [];
       const localMap = new Map(localSims.map((s) => [s.id, s]));
-      const toWrite = [];
-      let pulled = 0;
+      const incoming = [];
       for (const r of remote) {
         const l = localMap.get(r.id);
         if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) {
-          if (!l) pulled++;
-          toWrite.push({ ...window.__defaultSim ? window.__defaultSim() : {}, ...r });
+          incoming.push({ ...(window.__defaultSim ? window.__defaultSim() : {}), ...r });
         }
+      }
+      let added = 0, updated = 0, toWrite = incoming;
+      if (incoming.length && typeof window.mergeIncoming === 'function') {
+        const m = window.mergeIncoming(localSims, this.dedupeRemote(incoming));
+        toWrite = m.toPut;
+        added = m.added; updated = m.updated;
       }
       if (toWrite.length) {
         await DB.bulkPut(toWrite);
       }
+
+      const pulled = added + updated;
 
       // Guardar timestamp de sincronización
       const now = Date.now();

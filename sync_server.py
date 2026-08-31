@@ -90,6 +90,38 @@ def _init_db():
         cur.execute("ALTER TABLE esims ADD COLUMN IF NOT EXISTS warn_days INTEGER")
         conn.commit()
         cur.close()
+        _dedupe_db()
+    finally:
+        conn.close()
+
+
+def _dedupe_db():
+    """Elimina filas duplicadas que representan el mismo chip (mismo ICCID o,
+    si no hay ICCID, mismo teléfono), conservando la más reciente por updated_at.
+    Idempotente: con datos limpios no borra nada."""
+    if not DATABASE_URL:
+        return
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM esims a
+            USING (
+                SELECT id,
+                       row_number() OVER (
+                           PARTITION BY CASE
+                             WHEN iccid IS NOT NULL AND iccid <> '' THEN 'i:' || iccid
+                             WHEN phone IS NOT NULL AND phone <> '' THEN 'p:' || phone
+                             ELSE 'x:' || id
+                           END
+                           ORDER BY updated_at DESC, created_at DESC, id
+                       ) AS rk
+                FROM esims
+            ) b
+            WHERE a.id = b.id AND b.rk > 1
+        """)
+        conn.commit()
+        cur.close()
     finally:
         conn.close()
 
@@ -195,6 +227,9 @@ def push():
         cur.close()
     finally:
         conn.close()
+    # Limpiar duplicados por ICCID/número (evita que dispositivos con datos
+    # repetidos re-creen filas duplicadas en la nube)
+    _dedupe_db()
     return jsonify({"accepted": accepted, "syncAt": int(time.time() * 1000)})
 
 
