@@ -15,6 +15,9 @@ const APP_OPTIONS = [
   'Netflix', 'Spotify', 'Delivery apps', 'Otro'
 ];
 
+// Apps que guardan un identificador/sesión de su cuenta (se muestra como label)
+const SESSION_APPS = ['WhatsApp', 'Telegram'];
+
 const TYPE_OPTIONS = [
   { value: 'SIM', label: 'SIM', icon: '📟' },
   { value: 'eSIM', label: 'eSIM', icon: '📱' }
@@ -266,7 +269,7 @@ function renderStatsStrip() {
   const all = state.sims;
   const active = all.filter((s) => computeStatus(s) === 'active').length;
   const inactive = all.filter((s) => computeStatus(s) === 'inactive').length;
-  const totalApps = new Set(all.flatMap((s) => s.apps || [])).size;
+  const totalApps = new Set(all.flatMap((s) => normalizeApps(s.apps).map((a) => a.name))).size;
   wrap.innerHTML = `
     <div class="stat-card"><div class="stat-num">${all.length}</div><div class="stat-label">SIMs totales</div></div>
     <div class="stat-card"><div class="stat-num green">${active}</div><div class="stat-label">Activas</div></div>
@@ -361,6 +364,27 @@ function renderList() {
   });
 }
 
+function normalizeApps(apps) {
+  return (apps || []).map((a) => {
+    if (a && typeof a === 'object' && a.name != null) return { name: String(a.name), session: String(a.session || '') };
+    return { name: String(a), session: '' };
+  });
+}
+
+function renderAppTag(a) {
+  let name = a, session = '';
+  if (a && typeof a === 'object' && a.name != null) { name = a.name; session = String(a.session || '').trim(); }
+  return session ? `<span class="app-tag">${esc(name)} <span class="app-session">${esc(session)}</span></span>` : `<span class="app-tag">${esc(name)}</span>`;
+}
+
+function sessionFieldHtml(ap) {
+  const name = ap.name;
+  return `<div class="app-session-field" data-session-for="${escAttr(name)}">
+    <span class="field-label">✉️ ${esc(name)} — ID de sesión</span>
+    <input type="text" class="app-session-input" data-session-name="${escAttr(name)}" value="${escAttr(ap.session || '')}" placeholder="Ej: alias o número de la sesión" />
+  </div>`;
+}
+
 function simCard(s) {
   const st = computeStatus(s);
   const stD = statusDef(st);
@@ -379,7 +403,7 @@ function simCard(s) {
         <span>${typeDef(s.type).icon} ${esc(typeDef(s.type).label)}</span>
         ${s.phone ? `<span>📞 ${esc(s.phone)}</span>` : ''}
       </div>
-      ${apps.length ? `<div class="sim-apps">${apps.map(a => `<span class="app-tag">${esc(a)}</span>`).join('')}${(s.apps||[]).length > 4 ? `<span class="app-tag more">+${(s.apps||[]).length-4}</span>` : ''}</div>` : ''}
+      ${apps.length ? `<div class="sim-apps">${apps.map(a => renderAppTag(a)).join('')}${(s.apps||[]).length > 4 ? `<span class="app-tag more">+${(s.apps||[]).length-4}</span>` : ''}</div>` : ''}
     </div>`;
 }
 
@@ -419,13 +443,11 @@ function renderDetail() {
       </div>
     </div>
 
-      ${(sim.photo || sim.photoThumb) ? `<div class="detail-photo"><img id="detailPhoto" src="${sim.photoThumb || sim.photo}" data-full="${escAttr(sim.photo || '')}" alt="Foto de la SIM" /></div>` : ''}
-
     <div class="detail-body">
       <div class="info-grid">
+        ${infoItem('Número de teléfono', sim.phone || '—')}
         ${infoItem('Tipo', `${typeDef(sim.type).icon} ${esc(typeDef(sim.type).label)}`)}
         ${infoItem('ICCID', sim.iccid || '—', true)}
-        ${infoItem('Número de teléfono', sim.phone || '—')}
         ${infoItem('Compañía', sim.company || '—')}
         ${infoItem('Plan', sim.plan || '—')}
         ${infoItem('Estado', stD.icon + ' ' + stD.label)}
@@ -433,8 +455,8 @@ function renderDetail() {
 
       ${(sim.apps || []).length ? `
       <div class="detail-section">
-        <h3>📲 Apps registradas</h3>
-        <div class="detail-apps">${sim.apps.map(a => `<span class="app-tag">${esc(a)}</span>`).join('')}</div>
+        <h3>📲 Apps activas</h3>
+        <div class="detail-apps">${sim.apps.map(a => renderAppTag(a)).join('')}</div>
       </div>` : ''}
 
       ${sim.notes ? `
@@ -442,6 +464,8 @@ function renderDetail() {
         <h3>📝 Notas</h3>
         <p class="notes-text" style="white-space:pre-wrap">${esc(sim.notes)}</p>
       </div>` : ''}
+
+      ${(sim.photo || sim.photoThumb) ? `<div class="detail-photo"><img id="detailPhoto" src="${sim.photoThumb || sim.photo}" data-full="${escAttr(sim.photo || '')}" alt="Foto de la SIM" /></div>` : ''}
 
       <div class="detail-actions-bottom">
         <button class="btn primary" data-edit2>✏️ Editar eSIM</button>
@@ -509,7 +533,8 @@ function openForm(id = null) {
 function renderForm(id) {
   const sim = id ? { ...defaultSim(), ...state.sims.find((s) => s.id === id) } : defaultSim();
   const content = $('#view-form');
-  const selectedApps = new Set(sim.apps || []);
+  const selectedApps = new Map(); const getApp = (name) => selectedApps.get(name) || { name, session: '' };
+  normalizeApps(sim.apps).forEach((a) => selectedApps.set(a.name, a));
 
   let html = `
     <div class="form-header">
@@ -588,6 +613,9 @@ function renderForm(id) {
         <span class="field-label">Aplicaciones donde está registrada</span>
         <div class="app-chip-list">
           ${APP_OPTIONS.map(a => `<button type="button" class="app-chip ${selectedApps.has(a)?'selected':''}" data-app="${escAttr(a)}">${a}</button>`).join('')}
+        </div>
+        <div class="app-session-fields" id="appSessionFields">
+          ${[...selectedApps.values()].filter((ap) => SESSION_APPS.includes(ap.name)).map((ap) => sessionFieldHtml(ap)).join('')}
         </div>
         <input id="customApp" class="custom-app" placeholder="Escribe otra app y pulsa →" style="margin-top:8px" />
       </div>
@@ -718,13 +746,25 @@ function renderForm(id) {
   content.querySelector('[data-thumb-upload]').addEventListener('click', () => thumbInput.click());
   content.querySelectorAll('[data-photo-remove]').forEach((b) => b.addEventListener('click', () => removePhoto()));
 
+  const sessionFieldsEl = content.querySelector('#appSessionFields');
+
+  function removeSessionField(name) {
+    const f = content.querySelector('.app-session-field[data-session-for="' + CSS.escape(name) + '"]');
+    if (f) f.remove();
+  }
+  function addSessionField(ap) {
+    if (!SESSION_APPS.includes(ap.name)) return;
+    if (content.querySelector('.app-session-field[data-session-for="' + CSS.escape(ap.name) + '"]')) return;
+    sessionFieldsEl.insertAdjacentHTML('beforeend', sessionFieldHtml(ap));
+  }
+
   const customApp = $('#customApp');
   customApp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const v = customApp.value.trim();
       if (v && !selectedApps.has(v)) {
-        selectedApps.add(v);
+        selectedApps.set(v, getApp(v));
         addAppChip(v);
         customApp.value = '';
       }
@@ -739,17 +779,19 @@ function renderForm(id) {
     chip.dataset.app = name;
     chip.addEventListener('click', () => {
       selectedApps.delete(name);
+      removeSessionField(name);
       chip.remove();
     });
     content.querySelector('.app-chip-list').appendChild(chip);
+    addSessionField(getApp(name));
   }
 
   // toggles de apps (las del listado)
   content.querySelectorAll('.app-chip[data-app]').forEach((chip) => {
     chip.addEventListener('click', () => {
-      const app = chip.dataset.app;
-      if (selectedApps.has(app)) { selectedApps.delete(app); chip.classList.remove('selected'); }
-      else { selectedApps.add(app); chip.classList.add('selected'); }
+      const name = chip.dataset.app;
+      if (selectedApps.has(name)) { selectedApps.delete(name); removeSessionField(name); chip.classList.remove('selected'); }
+      else { selectedApps.set(name, { name, session: '' }); addSessionField({ name, session: '' }); chip.classList.add('selected'); }
     });
   });
 
@@ -782,6 +824,12 @@ function renderForm(id) {
     const customCompany = content.querySelector('#customCompany').value.trim();
     const company = f.company.value || customCompany;
 
+    // Recoger apps como objetos {name, session}; leer el ID de sesión de los inputs
+    const appList = [...selectedApps.values()].map((ap) => {
+      const inp = content.querySelector('.app-session-input[data-session-name="' + CSS.escape(ap.name) + '"]');
+      return { name: ap.name, session: inp ? inp.value.trim() : (ap.session || '') };
+    });
+
     const data = {
       ...defaultSim(),
       ...sim,
@@ -792,7 +840,7 @@ function renderForm(id) {
       company,
       plan: f.plan.value.trim(),
       notes: f.notes.value.trim(),
-      apps: [...selectedApps],
+      apps: appList,
       photo: photoUrl,
       photoThumb,
       statusOverridden: true,
@@ -865,7 +913,7 @@ function openPicker(title, options, onSelect, allowNone = false) {
 function showStatsModal() {
   const all = state.sims;
   const appCounts = {};
-  all.forEach((s) => (s.apps || []).forEach((a) => { appCounts[a] = (appCounts[a] || 0) + 1; }));
+  all.forEach((s) => normalizeApps(s.apps).forEach((a) => { appCounts[a.name] = (appCounts[a.name] || 0) + 1; }));
   const topApps = Object.entries(appCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const byCompany = {};
   all.forEach((s) => { const c = s.company || 'Sin compañía'; byCompany[c] = (byCompany[c] || 0) + 1; });

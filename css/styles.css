@@ -28,8 +28,9 @@ html, body {
 }
 
 body {
-  padding-bottom: 84px; /* espacio para bottom nav */
+  padding-bottom: calc(96px + env(safe-area-inset-bottom)); /* espacio para bottom nav */
   min-height: 100vh;
+  scroll-padding-bottom: 110px;
 }
 
 .hidden { display: none !important; }
@@ -222,6 +223,15 @@ body {
   border-radius: 8px;
 }
 .app-tag.more { color: var(--muted); }
+.app-tag .app-session {
+  margin-left: 3px;
+  padding: 2px 6px;
+  background: var(--primary-dark);
+  color: #eaf2ff;
+  font-size: .66rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
 
 /* Tarjetas de atención */
 .attention-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -487,6 +497,24 @@ code {
 }
 .app-chip.selected { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
 .custom-app { margin-top: 8px; }
+
+.app-session-fields { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.app-session-field {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.app-session-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: .88rem;
+}
 
 .form-actions {
   display: flex;
