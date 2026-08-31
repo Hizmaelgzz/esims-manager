@@ -895,9 +895,6 @@ function showExportModal() {
       <div><b>Importación masiva (CSV + fotos)</b><p class="muted">Carga muchos chips desde tu archivo CSV y carpeta de fotos.</p></div>
       <button class="btn outline" id="btnBulkImport">Importar</button>
     </div>
-    <input type="file" id="cosmosCsv" accept=".csv,text/csv" class="hidden" />
-    <input type="file" id="cosmosFolder" webkitdirectory multiple class="hidden" />
-    <input type="file" id="cosmosDriveMap" accept=".json,application/json" class="hidden" />
     <div class="setting-row">
       <div><b>Borrar todo</b><p class="muted">Elimina todas las eSIMs del dispositivo.</p></div>
       <button class="btn danger-ghost" id="btnWipe">Borrar</button>
@@ -979,6 +976,9 @@ function showExportModal() {
           <span id="biMapName" class="muted"></span>
         </div>
         <button class="btn primary" id="biRun" style="width:100%;margin-top:6px">🚀 Importar</button>
+        <input type="file" id="cosmosCsv" accept=".csv,text/csv" class="hidden" />
+        <input type="file" id="cosmosFolder" webkitdirectory multiple class="hidden" />
+        <input type="file" id="cosmosDriveMap" accept=".json,application/json" class="hidden" />
       </div>`,
       actions: [{ label: 'Cerrar', class: 'btn ghost', onClick: closeModal }],
     });
