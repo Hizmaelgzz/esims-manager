@@ -939,21 +939,12 @@ function showExportModal() {
       });
       if (validos.length) {
         const existing = await DB.getAll();
-        const existingIds = new Set(existing.map((x) => x.id));
-        let added = 0, updated = 0;
-        for (const v of validos) {
-          if (!v.id || !existingIds.has(v.id)) {
-            if (!v.id) { v.id = 'sim_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
-            added++;
-          } else {
-            updated++;
-          }
-        }
-        await DB.bulkPut(validos);
+        const { toPut, added, updated } = mergeIncoming(existing, validos);
+        await DB.bulkPut(toPut);
         await load();
         render();
         closeModal();
-        const msg = `Importados ${validos.length} (${added} nuevos, ${updated} actualiz.)`;
+        const msg = `Importados ${validos.length} (${added} nuevos, ${updated} actualizados por ICCID/número)`;
         toast(rechazados.length ? `${msg}. Omitidos ${rechazados.length} sin ICCID/número ⚠️` : msg + ' 📥');
         autoSync();
       } else {
@@ -1056,6 +1047,42 @@ function fileToThumb(file) {
   });
 }
 
+// Combina una lista de SIMs entrantes con las existentes: si ya existe una con el
+// mismo ICCID o el mismo número, la actualiza en lugar de duplicarla.
+function mergeIncoming(existingList, incomingList) {
+  const byIccid = new Map();
+  const byPhone = new Map();
+  const reg = (x) => {
+    if (x.iccid != null && x.iccid !== '') byIccid.set(String(x.iccid).trim(), x);
+    if (x.phone != null && x.phone !== '') byPhone.set(String(x.phone).trim(), x);
+  };
+  existingList.forEach(reg);
+  const result = [];
+  let added = 0, updated = 0;
+  for (const inc of incomingList) {
+    let target = null;
+    const kI = (inc.iccid != null && inc.iccid !== '') ? String(inc.iccid).trim() : null;
+    const kP = (inc.phone != null && inc.phone !== '') ? String(inc.phone).trim() : null;
+    if (kI && byIccid.has(kI)) target = byIccid.get(kI);
+    if (!target && kP && byPhone.has(kP)) target = byPhone.get(kP);
+    if (target) {
+      const merged = { ...target, ...inc, id: target.id, createdAt: target.createdAt, updatedAt: Date.now() };
+      const idx = result.indexOf(target);
+      if (idx >= 0) result[idx] = merged; else result.push(merged);
+      if (target.iccid != null) byIccid.set(String(target.iccid).trim(), merged);
+      if (target.phone != null) byPhone.set(String(target.phone).trim(), merged);
+      updated++;
+    } else {
+      const n = { ...inc };
+      if (!n.id) n.id = 'sim_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      result.push(n);
+      reg(n);
+      added++;
+    }
+  }
+  return { toPut: result, added, updated };
+}
+
 async function importBulk(csvFile, folderFiles, mapObj) {
   if (!csvFile) { toast('⚠️ Primero elige el archivo CSV'); return; }
   let text;
@@ -1081,12 +1108,13 @@ async function importBulk(csvFile, folderFiles, mapObj) {
     if (!iccid || !tel || iccid === 'SIN DATOS' || tel === 'SIN DATOS' || isNaN(iccid)) { skipped++; continue; }
     const now = Date.now();
     const sim = defaultSim();
-    sim.id = 'sim_' + now + '_' + Math.random().toString(36).slice(2, 8);
+    sim.type = 'SIM';
     sim.name = id || '';
     sim.iccid = iccid;
     sim.phone = tel;
     sim.company = 'Telcel';
-    sim.statusManual = (estado && estado.toUpperCase() === 'USADO') ? 'inactive' : 'active';
+    // OK = inactiva, USADO = activa
+    sim.statusManual = (estado && estado.toUpperCase() === 'USADO') ? 'active' : 'inactive';
     sim.statusOverridden = true;
     sim.photo = driveUrl(archivo);
     sim.notes = archivo ? ('Origen: ' + archivo) : '';
@@ -1097,11 +1125,13 @@ async function importBulk(csvFile, folderFiles, mapObj) {
   }
 
   if (!toImport.length) { toast('⚠️ Ninguna fila válida en el CSV'); return; }
-  await DB.bulkPut(toImport);
+  const existing = await DB.getAll();
+  const { toPut, added, updated } = mergeIncoming(existing, toImport);
+  await DB.bulkPut(toPut);
   await load();
   render();
   closeModal();
-  toast(`🚀 Importados ${toImport.length} chips (${skipped} omitidos sin datos)`);
+  toast(`🚀 Importados ${toImport.length} chips (${added} nuevos, ${updated} actualizados por ICCID/número; ${skipped} omitidos sin datos)`);
   autoSync();
 }
 
