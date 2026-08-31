@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+__pycache__/
+*.pyc
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Datos locales de sync (nunca subir respaldos con datos reales)
+esims_sync_data.json
+*.json.bak
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de respaldo de editor
+*.swp

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Gestión de eSIMs: registra, organiza y administra todas tus tarjetas eSIM de forma sencilla." />
+  <title>eSIM Manager</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-bar">
+    <div class="app-bar-top">
+      <h1 class="logo">📱 eSIM Manager</h1>
+      <div class="app-bar-actions">
+        <button id="btnSync" class="icon-btn" title="Sincronizar" aria-label="Sincronizar">🔄</button>
+        <button id="btnMenu" class="icon-btn" title="Menú" aria-label="Menú">☰</button>
+      </div>
+    </div>
+    <div class="sliding-menu" id="slidingMenu">
+      <button data-sheet="stats" class="menu-item">📊 Resumen</button>
+      <button data-sheet="sync" class="menu-item">☁️ Sincronización</button>
+      <button data-sheet="export" class="menu-item">📤 Respaldar / Exportar</button>
+      <button data-sheet="settings" class="menu-item">⚙️ Ajustes</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Vista Dashboard -->
+    <section id="view-dashboard" class="view">
+      <div class="search-bar">
+        <input id="searchInput" type="search" placeholder="Buscar por nombre, ICCID, teléfono o compañía…" autocomplete="off" />
+      </div>
+      <div class="filter-chips" id="filterChips"></div>
+      <div class="stats-strip" id="statsStrip"></div>
+      <div id="view-dashboard-content"></div>
+    </section>
+
+    <!-- Cartas de SIM en vista compacta -->
+    <section id="view-simlist" class="view hidden"></section>
+
+    <!-- Detalle de una eSIM -->
+    <section id="view-detail" class="view hidden"></section>
+
+    <!-- Formulario crear/editar -->
+    <section id="view-form" class="view hidden"></section>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-nav="dashboard">
+      <span class="nav-icon">🏠</span><span class="nav-label">Inicio</span>
+    </button>
+    <button class="nav-btn fab-nav" id="btnAddFab">
+      <span class="fab">＋</span>
+    </button>
+    <button class="nav-btn" data-nav="simlist">
+      <span class="nav-icon">📇</span><span class="nav-label">Mis eSIMs</span>
+    </button>
+  </nav>
+
+  <!-- FAB adicional para agregar -->
+  <button id="fabAdd" class="fab-main" aria-label="Agregar eSIM">＋</button>
+
+  <!-- Modales -->
+  <div class="modal-backdrop hidden" id="modalBackdrop"></div>
+  <div class="modal hidden" id="modal" role="dialog" aria-modal="true"></div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/db.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
