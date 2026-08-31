@@ -1297,9 +1297,22 @@ window.loadData = load;
    Service Worker
    ============================================================ */
 function registerSW() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW no registrado', e));
-  }
+  if (!('serviceWorker' in navigator)) return;
+  // Al tomar control un SW nuevo, recargar para que la app use la última versión.
+  const askRefresh = () => {
+    if (!sessionStorage.getItem('sw_reloaded')) {
+      sessionStorage.setItem('sw_reloaded', '1');
+      window.location.reload();
+    }
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', askRefresh);
+  // updateViaCache:'none' obliga al navegador a revalidar sw.js contra la red en
+  // cada carga, para que detecte versiones nuevas y no use la caché HTTP vieja.
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    })
+    .catch((e) => console.warn('SW no registrado', e));
 }
 
 document.addEventListener('DOMContentLoaded', init);
