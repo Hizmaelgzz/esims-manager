@@ -4,10 +4,17 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn sync_server:app
+    startCommand: gunicorn sync_server:app --workers 2 --threads 2 --timeout 30
     envVars:
+      # Copia aqui la cadena de conexion Postgres que te da Supabase:
+      # en Supabase: Dashboard -> Project Settings -> Database -> Connection string
+      # ejemplo: postgresql://postgres:PASSWORD@db.xxxx.supabase.co:5432/postgres
+      - key: DATABASE_URL
+        sync: false
+        value: TU_CADENA_DE_CONEXION_DE_SUPABASE
+      # Clave secreta personal. Usala igual en la app (Ajustes -> Clave).
       - key: ESIM_API_KEY
         sync: false
-        value: CAMBIA_ESTA_CLAVE
+        value: CAMBIA_ESTA_CLAVE_LARGA_Y_SEGURA
       - key: PYTHONUNBUFFERED
         value: true
