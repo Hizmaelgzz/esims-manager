@@ -178,7 +178,7 @@ function showView(view) {
 function bindGlobal() {
   $('#searchInput').addEventListener('input', (e) => {
     state.search = e.target.value.toLowerCase().trim();
-    renderList();
+    render();
   });
   $('#btnSync').addEventListener('click', () => {
     const Sync = loadSyncModule();
