@@ -979,6 +979,10 @@ function showExportModal() {
         <input type="file" id="cosmosCsv" accept=".csv,text/csv" class="hidden" />
         <input type="file" id="cosmosFolder" webkitdirectory multiple class="hidden" />
         <input type="file" id="cosmosDriveMap" accept=".json,application/json" class="hidden" />
+        <div id="biProgress" style="display:none;margin-top:12px">
+          <div class="bar-row"><span>Progreso</span><div class="bar" style="flex:3;height:10px"><div id="biBar" class="bar-fill" style="width:0%"></div></div><b id="biPct">0%</b></div>
+          <p id="biStatus" class="muted" style="margin:6px 0 0;font-size:.8rem;word-break:break-word"></p>
+        </div>
       </div>`,
       actions: [{ label: 'Cerrar', class: 'btn ghost', onClick: closeModal }],
     });
@@ -1003,7 +1007,16 @@ function showExportModal() {
       try { mapObj = JSON.parse(await f.text()); $M('#biMapName').textContent = '✅ ' + f.name; }
       catch (err) { toast('⚠️ JSON de enlaces inválido'); mapObj = {}; }
     });
-    $('#biRun').addEventListener('click', () => importBulk(csvFile, folderFiles, mapObj));
+    $('#biRun').addEventListener('click', () => {
+      const block = $M('#biProgress'), bar = $M('#biBar'), pct = $M('#biPct'), status = $M('#biStatus');
+      block.style.display = '';
+      const setProg = (p, txt) => { bar.style.width = p + '%'; pct.textContent = p + '%'; status.textContent = txt; };
+      importBulk(csvFile, folderFiles, mapObj, (info) => {
+        if (info.save) { setProg(100, '💾 Guardando en el dispositivo…'); return; }
+        if (info.done) { setProg(100, `✅ ${info.total} chips (${info.added} nuevos, ${info.updated} actualizados)`); return; }
+        if (info.total) { const p = Math.round(info.done / info.total * 100); setProg(p, `🖼️ Procesando foto ${info.done}/${info.total}…`); }
+      }).catch((err) => { setProg(100, '❌ Error: ' + ((err && err.message) || err)); });
+    });
   });
 
   $('#btnWipe').addEventListener('click', () => {
@@ -1083,7 +1096,7 @@ function mergeIncoming(existingList, incomingList) {
   return { toPut: result, added, updated };
 }
 
-async function importBulk(csvFile, folderFiles, mapObj) {
+async function importBulk(csvFile, folderFiles, mapObj, onProgress) {
   if (!csvFile) { toast('⚠️ Primero elige el archivo CSV'); return; }
   let text;
   try { text = await csvFile.text(); } catch (e) { toast('⚠️ No se pudo leer el CSV'); return; }
@@ -1102,6 +1115,7 @@ async function importBulk(csvFile, folderFiles, mapObj) {
 
   const toImport = [];
   let skipped = 0;
+  const rowTotal = rows.length - hdrIdx - 1;
   for (let i = hdrIdx + 1; i < rows.length; i++) {
     const p = rows[i].split(',').map((x) => x.trim());
     const id = p[1], tel = p[2], estado = p[3], iccid = p[4], archivo = p[6] || '';
@@ -1122,16 +1136,20 @@ async function importBulk(csvFile, folderFiles, mapObj) {
     const img = byName[archivo];
     sim.photoThumb = img ? await fileToThumb(img) : '';
     toImport.push(sim);
+    if (onProgress) onProgress({ done: i - hdrIdx, total: rowTotal });
+    await new Promise((r) => setTimeout(r, 0));
   }
 
   if (!toImport.length) { toast('⚠️ Ninguna fila válida en el CSV'); return; }
+  if (onProgress) onProgress({ save: true });
   const existing = await DB.getAll();
   const { toPut, added, updated } = mergeIncoming(existing, toImport);
   await DB.bulkPut(toPut);
   await load();
   render();
   closeModal();
-  toast(`🚀 Importados ${toImport.length} chips (${added} nuevos, ${updated} actualizados por ICCID/número; ${skipped} omitidos sin datos)`);
+  if (onProgress) onProgress({ done: true, added, updated, skipped, total: toImport.length });
+  else toast(`🚀 Importados ${toImport.length} chips (${added} nuevos, ${updated} actualizados por ICCID/número; ${skipped} omitidos sin datos)`);
   autoSync();
 }
 
