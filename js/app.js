@@ -892,6 +892,13 @@ function showExportModal() {
       <button class="btn outline" id="btnImportJson">Importar</button>
     </div>
     <div class="setting-row">
+      <div><b>Importación masiva (CSV + fotos)</b><p class="muted">Carga muchos chips desde tu archivo CSV y carpeta de fotos.</p></div>
+      <button class="btn outline" id="btnBulkImport">Importar</button>
+    </div>
+    <input type="file" id="cosmosCsv" accept=".csv,text/csv" class="hidden" />
+    <input type="file" id="cosmosFolder" webkitdirectory multiple class="hidden" />
+    <input type="file" id="cosmosDriveMap" accept=".json,application/json" class="hidden" />
+    <div class="setting-row">
       <div><b>Borrar todo</b><p class="muted">Elimina todas las eSIMs del dispositivo.</p></div>
       <button class="btn danger-ghost" id="btnWipe">Borrar</button>
     </div>
@@ -957,6 +964,57 @@ function showExportModal() {
     }
   });
 
+  // ---- Importación masiva (CSV + carpeta de fotos) ----
+  $('#btnBulkImport').addEventListener('click', () => {
+    openModal({
+      title: '📦 Importación masiva',
+      body: `<div class="settings-block">
+        <p class="muted" style="margin-top:0">Selecciona en orden:</p>
+        <ol style="margin:8px 0 0 20px;padding:0;line-height:1.8">
+          <li><b>Archivo CSV</b> con tus chips (id, teléfono, estado, ICCID, archivo).</li>
+          <li><b>Carpeta de fotos</b> — elige la carpeta donde están las imágenes (los nombres deben coincidir con la columna "Archivo").</li>
+          <li><small>Opcional</small> — un <b>JSON de enlaces</b> (archivo → URL de Drive) para guardar la foto completa.</li>
+        </ol>
+        <div class="form-actions">
+          <button class="btn" id="biPickCsv">1️⃣ Elegir CSV</button>
+          <span id="biCsvName" class="muted"></span>
+        </div>
+        <div class="form-actions">
+          <button class="btn" id="biPickFolder">2️⃣ Elegir carpeta de fotos</button>
+          <span id="biFolderCount" class="muted"></span>
+        </div>
+        <div class="form-actions">
+          <button class="btn outline" id="biPickMap">➕ JSON de enlaces (opcional)</button>
+          <span id="biMapName" class="muted"></span>
+        </div>
+        <button class="btn primary" id="biRun" style="width:100%;margin-top:6px">🚀 Importar</button>
+      </div>`,
+      actions: [{ label: 'Cerrar', class: 'btn ghost', onClick: closeModal }],
+    });
+
+    let csvFile = null, folderFiles = [], mapObj = {};
+    const $M = (s) => $('#modal').querySelector(s);
+
+    $('#biPickCsv').addEventListener('click', () => $('#cosmosCsv').click());
+    $('#cosmosCsv').addEventListener('change', (e) => {
+      csvFile = e.target.files[0] || null;
+      $M('#biCsvName').textContent = csvFile ? '✅ ' + csvFile.name : '';
+    });
+    $('#biPickFolder').addEventListener('click', () => $('#cosmosFolder').click());
+    $('#cosmosFolder').addEventListener('change', (e) => {
+      folderFiles = Array.from(e.target.files || []);
+      $M('#biFolderCount').textContent = '✅ ' + folderFiles.length + ' archivo(s)';
+    });
+    $('#biPickMap').addEventListener('click', () => $('#cosmosDriveMap').click());
+    $('#cosmosDriveMap').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try { mapObj = JSON.parse(await f.text()); $M('#biMapName').textContent = '✅ ' + f.name; }
+      catch (err) { toast('⚠️ JSON de enlaces inválido'); mapObj = {}; }
+    });
+    $('#biRun').addEventListener('click', () => importBulk(csvFile, folderFiles, mapObj));
+  });
+
   $('#btnWipe').addEventListener('click', () => {
     openModal({
       title: 'Borrar todo',
@@ -973,6 +1031,78 @@ function showExportModal() {
       ]
     });
   });
+}
+
+function fileToThumb(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 600;
+        let { width, height } = img;
+        if (width > height && width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+        else if (height > MAX) { width = Math.round(width * MAX / height); height = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = () => resolve('');
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importBulk(csvFile, folderFiles, mapObj) {
+  if (!csvFile) { toast('⚠️ Primero elige el archivo CSV'); return; }
+  let text;
+  try { text = await csvFile.text(); } catch (e) { toast('⚠️ No se pudo leer el CSV'); return; }
+  const rows = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
+  let hdrIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const lower = rows[i].toLowerCase();
+    if (lower.includes('telefono') && lower.includes('iccid')) { hdrIdx = i; break; }
+  }
+  if (hdrIdx < 0) { toast('⚠️ No encontré las columnas Telefono/ICCID en el CSV'); return; }
+
+  const byName = {};
+  (folderFiles || []).forEach((f) => { byName[f.name] = f; });
+  const driveMap = mapObj && typeof mapObj === 'object' ? (mapObj.files || mapObj) : {};
+  const driveUrl = (a) => { const v = driveMap[a]; return (v && typeof v === 'object') ? (v.url || '') : (v || ''); };
+
+  const toImport = [];
+  let skipped = 0;
+  for (let i = hdrIdx + 1; i < rows.length; i++) {
+    const p = rows[i].split(',').map((x) => x.trim());
+    const id = p[1], tel = p[2], estado = p[3], iccid = p[4], archivo = p[6] || '';
+    if (!iccid || !tel || iccid === 'SIN DATOS' || tel === 'SIN DATOS' || isNaN(iccid)) { skipped++; continue; }
+    const now = Date.now();
+    const sim = defaultSim();
+    sim.id = 'sim_' + now + '_' + Math.random().toString(36).slice(2, 8);
+    sim.name = id || '';
+    sim.iccid = iccid;
+    sim.phone = tel;
+    sim.company = 'Telcel';
+    sim.statusManual = (estado && estado.toUpperCase() === 'USADO') ? 'inactive' : 'active';
+    sim.statusOverridden = true;
+    sim.photo = driveUrl(archivo);
+    sim.notes = archivo ? ('Origen: ' + archivo) : '';
+    sim.createdAt = now; sim.updatedAt = now;
+    const img = byName[archivo];
+    sim.photoThumb = img ? await fileToThumb(img) : '';
+    toImport.push(sim);
+  }
+
+  if (!toImport.length) { toast('⚠️ Ninguna fila válida en el CSV'); return; }
+  await DB.bulkPut(toImport);
+  await load();
+  render();
+  closeModal();
+  toast(`🚀 Importados ${toImport.length} chips (${skipped} omitidos sin datos)`);
+  autoSync();
 }
 
 function showSettingsModal() {
