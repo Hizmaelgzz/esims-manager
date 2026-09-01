@@ -179,11 +179,45 @@ function bindGlobal() {
   $('#searchInput').addEventListener('input', (e) => {
     state.search = e.target.value.toLowerCase().trim();
     render();
+    renderSuggest();
+  });
+  $('#searchInput').addEventListener('focus', renderSuggest);
+  $('#searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && state.search) renderSuggest();
+  });
+  document.addEventListener('click', (e) => {
+    const sb = $('#suggestBox');
+    if (sb && !sb.contains(e.target) && e.target.id !== 'searchInput') sb.classList.add('hidden');
   });
   $('#btnSync').addEventListener('click', () => {
     const Sync = loadSyncModule();
     Sync && Sync.runManualSync();
   });
+}
+
+// Autocompletado: muestra debajo de la barra las SIMs que coinciden con la búsqueda.
+function renderSuggest() {
+  const box = $('#suggestBox');
+  if (!box) return;
+  const q = state.search;
+  if (!q) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const matches = filteredSims().slice(0, 10);
+  if (!matches.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.innerHTML = '';
+  matches.forEach((s) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'suggest-item';
+    item.innerHTML = `
+      <div class="suggest-title">${esc(s.name || 'Sin nombre')}</div>
+      <div class="suggest-sub">${esc(s.company || '')}${s.phone ? ' · ' + esc(s.phone) : ''}${s.iccid ? ' · ' + esc(s.iccid) : ''}</div>`;
+    item.addEventListener('click', () => {
+      $('#suggestBox').classList.add('hidden');
+      openDetail(s.id);
+    });
+    box.appendChild(item);
+  });
+  box.classList.remove('hidden');
 }
 
 /* ============================================================

@@ -109,7 +109,7 @@ body {
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Search + chips ---------- */
-.search-bar { margin-bottom: 14px; }
+.search-bar { margin-bottom: 14px; position: relative; }
 .search-bar input {
   width: 100%;
   padding: 14px 16px 14px 40px;
@@ -120,6 +120,38 @@ body {
   font-size: .95rem;
 }
 .search-bar input:focus { outline: none; border-color: var(--primary); }
+
+/* Autocompletado / sugerencias de búsqueda */
+.suggest-box {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.18);
+  overflow: hidden;
+  z-index: 60;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.suggest-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-item:active { background: var(--bg); }
+.suggest-title { font-size: .95rem; font-weight: 600; }
+.suggest-sub { font-size: .8rem; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .filter-chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
 .filter-chips::-webkit-scrollbar { display: none; }
